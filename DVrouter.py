@@ -81,6 +81,7 @@ class DVrouter(Router):
             #   send packet based on forwarding table, e.g., self.send(port, packet)
             if packet.dst_addr in self.__forwarding_table:
                 dst = self.__forwarding_table[packet.dst_addr]
+                # Destination is known and reachable
                 if dst.cost < _INFINITY and dst.maybe_port is not None:
                     self.send(dst.maybe_port, packet)
         else:
@@ -95,8 +96,11 @@ class DVrouter(Router):
             neighbor_addr = packet.src_addr
 
             for addr, dst in distance_vector.items():
+                # If neighbour says destination is unreachable
                 if dst.cost == _INFINITY:
+                    # If current forwarding table is using that neighbour as the next hop
                     if addr in self.__forwarding_table and self.__forwarding_table[addr].maybe_next_hop == neighbor_addr:
+                        # Mark destination as unreachable
                         self.__forwarding_table[addr] = _ForwardingTableEntry(cost=_INFINITY, next_hop=None, port=None)
                         is_received_distance_vector_different = True
 
@@ -104,6 +108,7 @@ class DVrouter(Router):
                     neighbor_cost = self.__neighbors_by_addrs[neighbor_addr].cost
                     new_neighbor_cost = min(dst.cost + neighbor_cost, _INFINITY)
 
+                    # If entry does not exist of new cost is better
                     if addr not in self.__forwarding_table or new_neighbor_cost < self.__forwarding_table[addr].cost:
                         neighbor_port = self.__neighbors_by_addrs[neighbor_addr].port
                         self.__forwarding_table[addr] = _ForwardingTableEntry(cost=new_neighbor_cost, next_hop=neighbor_addr, port=neighbor_port)
@@ -123,6 +128,7 @@ class DVrouter(Router):
         self.__neighbors_by_addrs[endpoint] = _NeighborEntry(cost=cost, port=port)
 
         maybe_dst = self.__forwarding_table.get(endpoint)
+        # If entry does not exist or cost changes
         if maybe_dst is None or maybe_dst.cost != cost:
             self.__forwarding_table[endpoint] = _ForwardingTableEntry(cost=cost, next_hop=endpoint, port=port)
             self.__broadcast_to_neighbors()
@@ -137,8 +143,10 @@ class DVrouter(Router):
         neighbor_addr = self.__neighbor_addrs_by_ports.pop(port)
         del self.__neighbors_by_addrs[neighbor_addr]
         
+        # For all destinations routed through this port
         for addr, dst in self.__forwarding_table.items():
             if dst.maybe_port == port:
+                # Mark them as unreachable
                 self.__forwarding_table[addr] = _ForwardingTableEntry(cost=_INFINITY, next_hop=None, port=None)
 
         self.__broadcast_to_neighbors()
@@ -159,6 +167,7 @@ class DVrouter(Router):
 
     def __broadcast_to_neighbors(self):
         for neighbor_addr, neighbor in self.__neighbors_by_addrs.items():
+            # Cost is infinity if neighbour is the next hop
             distance_vector = {addr: _DistanceVectorEntry(cost=_INFINITY if neighbor_addr != addr and neighbor_addr == entry.maybe_next_hop else entry.cost, next_hop=entry.maybe_next_hop) for addr, entry in self.__forwarding_table.items()} # Poisoned reverse
             content = _serialize(distance_vector)
 
